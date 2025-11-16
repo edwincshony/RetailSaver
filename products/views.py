@@ -24,7 +24,7 @@ class ProductListView(AdminRequiredMixin, ListView):
     model = Product
     template_name = 'products/product_list.html'
     context_object_name = 'products'
-    paginate_by = 10   # keep this — ListView still works, but we override final output
+    paginate_by = None  # Disable built-in pagination since we use custom paginate_queryset
 
     def get_queryset(self):
         queryset = Product.objects.filter(user=self.request.user)
