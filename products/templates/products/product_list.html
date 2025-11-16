@@ -1,22 +1,24 @@
-{% extends 'home.html' %}  <!-- Reuse base if extended; otherwise standalone -->
-
+{% extends 'home.html' %}
 {% load crispy_forms_tags %}
+
 {% block content %}
 <div class="container mt-4">
     <h2>AFC Bank Supermarket Product Management</h2>
 
-    
-    <!-- Search Form -->
-    <form method="get" class="mb-4">
+    <!-- Search Input (No Form, No Button) -->
+    <div class="mb-4">
         <div class="row">
             <div class="col-md-8">
-                <input type="text" name="search" class="form-control" placeholder="Search products (e.g., 'apple' or 'pow')" value="{{ search_term }}">
-            </div>
-            <div class="col-md-4">
-                <button type="submit" class="btn btn-outline-primary w-100">Search</button>
+                <input type="text" 
+                       id="searchInput" 
+                       class="form-control" 
+                       placeholder="Search products (e.g., 'apple' or 'pow')" 
+                       value="{{ search_term }}"
+                       autocomplete="off">
+                <small class="text-muted" id="searchStatus"></small>
             </div>
         </div>
-    </form>
+    </div>
     
     <!-- Add Button -->
     <div class="mb-3">
@@ -35,17 +37,22 @@
                     <th>Actions</th>
                 </tr>
             </thead>
-            <tbody>
+            <tbody id="productTableBody">
                 {% for product in products %}
                 <tr>
                     <td>{{ product.name }}</td>
                     <td>{{ product.get_weight_display }}</td>
-<td><span class="badge bg-primary fs-6">Rs. {{ product.amount }}</span></td>
-
+                    <td><span class="badge bg-primary fs-6">Rs. {{ product.amount }}</span></td>
                     <td>{{ product.date_added|date:"M d, Y H:i" }}</td>
                     <td>
-                        <button class="btn btn-sm btn-warning edit-btn" data-bs-toggle="modal" data-bs-target="#editModal{{ product.pk }}" data-product-url="{% url 'product_update' product.pk %}">Edit</button>
-                        <button class="btn btn-sm btn-danger delete-btn" data-bs-toggle="modal" data-bs-target="#deleteModal{{ product.pk }}" data-product-url="{% url 'product_delete' product.pk %}">Delete</button>
+                        <button class="btn btn-sm btn-warning edit-btn" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#editModal{{ product.pk }}" 
+                                data-product-url="{% url 'product_update' product.pk %}">Edit</button>
+                        <button class="btn btn-sm btn-danger delete-btn" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#deleteModal{{ product.pk }}" 
+                                data-product-url="{% url 'product_delete' product.pk %}">Delete</button>
                     </td>
                 </tr>
                 
@@ -60,7 +67,6 @@
                             <form method="post" action="{% url 'product_update' product.pk %}">
                                 {% csrf_token %}
                                 <div class="modal-body">
-                                    <!-- Form loads via JS or redirect; for simplicity, redirect on button click -->
                                     <p>Redirecting to edit form...</p>
                                 </div>
                                 <div class="modal-footer">
@@ -99,8 +105,94 @@
             </tbody>
         </table>
     </div>
-  {% include 'partials/pagination.html' %}
-  
- 
+    
+    {% include 'partials/pagination.html' %}
 </div>
+
+<script>
+// Get CSRF token for AJAX requests
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+const csrftoken = getCookie('csrftoken');
+const searchInput = document.getElementById('searchInput');
+const searchStatus = document.getElementById('searchStatus');
+const productTableBody = document.getElementById('productTableBody');
+
+let searchTimeout = null;
+
+// Function to render product rows from JSON data
+function renderProducts(products) {
+    if (products.length === 0) {
+        return '<tr><td colspan="5" class="text-center">No products found.</td></tr>';
+    }
+    
+    let html = '';
+    products.forEach(function(product) {
+        html += `
+            <tr>
+                <td>${product.name}</td>
+                <td>${product.weight}</td>
+                <td><span class="badge bg-primary fs-6">Rs. ${product.amount}</span></td>
+                <td>${product.date_added}</td>
+                <td>
+                    <a href="${product.update_url}" class="btn btn-sm btn-warning">Edit</a>
+                    <button class="btn btn-sm btn-danger" 
+                            onclick="if(confirm('Are you sure you want to delete ${product.name}?')) { 
+                                window.location.href='${product.delete_url}'; 
+                            }">Delete</button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    return html;
+}
+
+// Live search event listener
+searchInput.addEventListener('keyup', function(e) {
+    const searchTerm = e.target.value;
+    
+    // Clear previous timeout
+    if (searchTimeout) {
+        clearTimeout(searchTimeout);
+    }
+    
+    // Show searching status
+    searchStatus.textContent = 'Searching...';
+    
+    // Debounce: Wait 300ms after user stops typing
+    searchTimeout = setTimeout(function() {
+        // Make AJAX request
+        fetch(`?search=${encodeURIComponent(searchTerm)}`, {
+            method: 'GET',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': csrftoken
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            productTableBody.innerHTML = renderProducts(data.products);
+            searchStatus.textContent = '';
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            searchStatus.textContent = 'Error loading results';
+        });
+    }, 300);
+});
+</script>
 {% endblock %}

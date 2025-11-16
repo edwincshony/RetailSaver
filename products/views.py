@@ -20,11 +20,14 @@ class AdminRequiredMixin(LoginRequiredMixin):
             return HttpResponseRedirect(reverse_lazy('login'))
         return super().dispatch(request, *args, **kwargs)
 
+from django.http import JsonResponse
+from django.db.models import Q
+
 class ProductListView(AdminRequiredMixin, ListView):
     model = Product
     template_name = 'products/product_list.html'
     context_object_name = 'products'
-    paginate_by = None  # Disable built-in pagination since we use custom paginate_queryset
+    paginate_by = None
 
     def get_queryset(self):
         queryset = Product.objects.filter(user=self.request.user)
@@ -35,18 +38,39 @@ class ProductListView(AdminRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-
-        # --- apply your global paginator ---
         page_obj, products = paginate_queryset(self.request, context['object_list'])
-
-        context['products'] = products          # override object_list
-        context['page_obj'] = page_obj          # override page object
-        context['paginator'] = page_obj.paginator  # ensure template sees paginator
+        context['products'] = products
+        context['page_obj'] = page_obj
+        context['paginator'] = page_obj.paginator
         context['is_paginated'] = True
-        # ------------------------------------
-
         context['search_term'] = self.request.GET.get('search', '')
         return context
+
+    def get(self, request, *args, **kwargs):
+        # Check if it's an AJAX request
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            self.object_list = self.get_queryset()
+            context = self.get_context_data()
+            
+            # Return JSON data instead of HTML
+            products_data = []
+            for product in context['products']:
+                products_data.append({
+                    'id': product.pk,
+                    'name': product.name,
+                    'weight': product.get_weight_display(),
+                    'amount': product.amount,
+                    'date_added': product.date_added.strftime('%b %d, %Y %H:%M'),
+                    'update_url': request.build_absolute_uri(f'/products/{product.pk}/update/'),
+                    'delete_url': request.build_absolute_uri(f'/products/{product.pk}/delete/'),
+                })
+            
+            return JsonResponse({'products': products_data})
+        
+        # Regular request
+        return super().get(request, *args, **kwargs)
+
+
 
 
 class ProductCreateView(AdminRequiredMixin, CreateView):

@@ -3,13 +3,14 @@ from crispy_forms.helper import FormHelper
 from crispy_forms.layout import Submit
 from .models import Product
 
+
 class ProductForm(forms.ModelForm):
     class Meta:
         model = Product
-        fields = ['name', 'weight_value', 'weight_unit', 'amount']
+        fields = ['name', 'quantity', 'weight_unit', 'amount']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'e.g., Red Apple'}),
-            'weight_value': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'e.g., 1'}),
+            'quantity': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'e.g., 1'}),
             'amount': forms.NumberInput(attrs={'class': 'form-control', 'placeholder': 'e.g., 5'}),
         }
     
