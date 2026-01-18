@@ -6,4 +6,6 @@ urlpatterns = [
     path('create/', views.ProductCreateView.as_view(), name='product_create'),
     path('<int:pk>/update/', views.ProductUpdateView.as_view(), name='product_update'),
     path('<int:pk>/delete/', views.ProductDeleteView.as_view(), name='product_delete'),
+    path('export/pdf/', views.ProductExportPDFView.as_view(), name='product_export_pdf'),
+    path('export/excel/', views.ProductExportExcelView.as_view(), name='product_export_excel'),
 ]

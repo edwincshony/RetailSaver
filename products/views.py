@@ -3,12 +3,19 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.contrib import messages
 from django.db.models import Q
 from django.core.paginator import Paginator
-from django.views.generic import ListView, CreateView, UpdateView, DeleteView
+from django.views.generic import ListView, CreateView, UpdateView, DeleteView, View
 from utils.pagination import paginate_queryset  # make sure path is correct
 from django.urls import reverse_lazy
-from django.http import HttpResponseRedirect
+from django.http import HttpResponseRedirect, HttpResponse, JsonResponse
 from .models import Product
 from .forms import ProductForm
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment
+from datetime import datetime
 
 class AdminRequiredMixin(LoginRequiredMixin):
     def dispatch(self, request, *args, **kwargs):
@@ -118,3 +125,130 @@ class ProductDeleteView(AdminRequiredMixin, DeleteView):
     def delete(self, request, *args, **kwargs):
         messages.success(self.request, 'Product deleted successfully.')
         return super().delete(request, *args, **kwargs)
+
+
+class ProductExportPDFView(AdminRequiredMixin, View):
+    def get(self, request, *args, **kwargs):
+        products = Product.objects.filter(user=request.user).order_by('-date_added')
+        
+        # Create PDF
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="products_{datetime.now().strftime("%Y%m%d_%H%M%S")}.pdf"'
+        
+        doc = SimpleDocTemplate(response, pagesize=letter)
+        elements = []
+        
+        # Add title
+        styles = getSampleStyleSheet()
+        title_style = ParagraphStyle(
+            'CustomTitle',
+            parent=styles['Heading1'],
+            fontSize=16,
+            textColor=colors.HexColor('#1f77b4'),
+            spaceAfter=20,
+            alignment=1
+        )
+        elements.append(Paragraph("AFC Bank Supermarket Products", title_style))
+        elements.append(Spacer(1, 12))
+        
+        # Create table data
+        data = [['Product Name', 'Quantity', 'Amount (Rs.)', 'Date Added']]
+        for product in products:
+            data.append([
+                product.name,
+                product.get_weight_display(),
+                f"{product.amount}",
+                product.date_added.strftime('%b %d, %Y')
+            ])
+        
+        # Create table
+        table = Table(data, colWidths=[150, 100, 100, 120])
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f77b4')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 12),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0f0f0')])
+        ]))
+        
+        elements.append(table)
+        elements.append(Spacer(1, 20))
+        
+        # Add summary
+        summary_style = ParagraphStyle(
+            'Summary',
+            parent=styles['Normal'],
+            fontSize=10,
+            textColor=colors.grey,
+        )
+        total_amount = sum(float(p.amount) for p in products)
+        elements.append(Paragraph(f"<b>Total Products:</b> {products.count()}", summary_style))
+        elements.append(Paragraph(f"<b>Total Value:</b> Rs. {total_amount:.2f}", summary_style))
+        elements.append(Paragraph(f"<b>Generated on:</b> {datetime.now().strftime('%B %d, %Y %I:%M %p')}", summary_style))
+        
+        doc.build(elements)
+        return response
+
+
+class ProductExportExcelView(AdminRequiredMixin, View):
+    def get(self, request, *args, **kwargs):
+        products = Product.objects.filter(user=request.user).order_by('-date_added')
+        
+        # Create Excel workbook
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Products"
+        
+        # Add headers
+        headers = ['Product Name', 'Quantity', 'Amount (Rs.)', 'Date Added']
+        ws.append(headers)
+        
+        # Style headers
+        header_fill = PatternFill(start_color='1f77b4', end_color='1f77b4', fill_type='solid')
+        header_font = Font(bold=True, color='FFFFFF', size=12)
+        
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        
+        # Add data
+        for product in products:
+            ws.append([
+                product.name,
+                product.get_weight_display(),
+                float(product.amount),
+                product.date_added.strftime('%b %d, %Y')
+            ])
+        
+        # Format columns
+        ws.column_dimensions['A'].width = 25
+        ws.column_dimensions['B'].width = 15
+        ws.column_dimensions['C'].width = 15
+        ws.column_dimensions['D'].width = 15
+        
+        # Add summary section
+        summary_row = len(products) + 3
+        ws[f'A{summary_row}'] = 'Total Products:'
+        ws[f'B{summary_row}'] = products.count()
+        
+        ws[f'A{summary_row + 1}'] = 'Total Value (Rs.):'
+        total_amount = sum(float(p.amount) for p in products)
+        ws[f'B{summary_row + 1}'] = total_amount
+        
+        # Make summary bold
+        for row in ws[summary_row:summary_row + 2]:
+            for cell in row:
+                cell.font = Font(bold=True)
+        
+        # Return as download
+        response = HttpResponse(
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="products_{datetime.now().strftime("%Y%m%d_%H%M%S")}.xlsx"'
+        wb.save(response)
+        return response
